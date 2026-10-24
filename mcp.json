@@ -1,0 +1,16 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+  "name": "darklens-mcp",
+  "description": "Autonomous dark pattern & GDPR/FTC compliance auditor for AI coding agents.",
+  "version": "1.0.1",
+  "mcpServers": {
+    "darklens": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "darklens-mcp"],
+      "env": {
+        "DARKLENS_API_KEY": "${user_config.api_key}"
+      }
+    }
+  }
+}

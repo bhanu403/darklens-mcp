@@ -1,0 +1,18 @@
+---
+description: Automatically audit newly created UI components, checkout pages, and web forms for dark patterns and GDPR/FTC compliance violations.
+globs: ["**/*.jsx", "**/*.tsx", "**/*.html", "**/*.vue", "**/*.svelte"]
+---
+
+# DarkLens UX Compliance Rule for Cursor
+
+When generating or editing user interface code, web forms, pricing tables, and checkout flows:
+
+1. **Avoid Deceptive Design Patterns:**
+   - Never use pre-selected checkboxes for optional marketing emails, auto-renewals, or insurance add-ons.
+   - Do not use manipulative or guilt-tripping confirmshaming copy (e.g., "No thanks, I hate saving money").
+   - Ensure dismiss/cancel buttons have equal visual contrast and prominence to the accept/continue button.
+   - Never inject artificial urgency countdown timers or fake inventory scarcity badges.
+
+2. **Run DarkLens MCP Audit:**
+   - Use the `darklens_audit_html` MCP tool to verify HTML and JSX snapshots before writing files.
+   - For live or staging URLs, call `darklens_audit_url` to inspect against FTC, GDPR, CCPA, and EU DSA regulations.

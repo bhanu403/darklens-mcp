@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "darklens": {
+      "command": "npx",
+      "args": ["-y", "darklens-mcp"],
+      "env": {
+        "DARKLENS_API_KEY": "${user_config.api_key}"
+      }
+    }
+  }
+}
