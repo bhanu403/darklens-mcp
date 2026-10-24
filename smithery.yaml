@@ -1,0 +1,20 @@
+startCommand:
+  type: stdio
+  configSchema:
+    type: object
+    properties:
+      apiKey:
+        type: string
+        description: DarkLens API Key (get free at https://darklens.dev/dashboard)
+        sensitive: true
+    required:
+      - apiKey
+  commandFunction:
+    |
+    (config) => ({
+      command: 'npx',
+      args: ['-y', 'darklens-mcp'],
+      env: {
+        DARKLENS_API_KEY: config.apiKey
+      }
+    })

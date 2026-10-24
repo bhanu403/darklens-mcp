@@ -1,0 +1,53 @@
+{
+  "name": "darklens-mcp",
+  "version": "1.0.1",
+  "description": "DarkLens Model Context Protocol (MCP) Server: Real-time dark pattern and compliance auditing for AI coding agents (Cursor, Windsurf, Claude Desktop, Lovable).",
+  "type": "module",
+  "main": "bin/index.js",
+  "bin": {
+    "darklens-mcp": "bin/index.js"
+  },
+  "files": [
+    "bin",
+    "smithery.yaml",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "start": "node bin/index.js"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "mcp-server",
+    "cursor",
+    "windsurf",
+    "claude",
+    "dark-patterns",
+    "compliance",
+    "gdpr",
+    "ftc",
+    "ccpa",
+    "ai-agent",
+    "lovable",
+    "devsecops",
+    "darklens"
+  ],
+  "author": "DarkLens <support@darklens.dev> (https://darklens.dev)",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bhanu403/darklens-mcp.git"
+  },
+  "homepage": "https://darklens.dev",
+  "bugs": {
+    "url": "https://darklens.dev/contact"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "node-fetch": "^3.3.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
