@@ -15,20 +15,145 @@ import fetch from "node-fetch";
 
 // Parse API key from env or command line arguments
 function getApiKey() {
-  if (process.env.DARKLENS_API_KEY) {
+  if (process.env.DARKLENS_API_KEY && process.env.DARKLENS_API_KEY.trim()) {
     return process.env.DARKLENS_API_KEY.trim();
   }
+  const eqArg = process.argv.find((arg) => arg.startsWith("--key="));
+  if (eqArg) {
+    const val = eqArg.slice("--key=".length).trim();
+    if (val && !val.startsWith("--")) return val;
+  }
   const keyIdx = process.argv.indexOf("--key");
-  if (keyIdx !== -1 && process.argv[keyIdx + 1]) {
-    return process.argv[keyIdx + 1].trim();
+  if (keyIdx !== -1) {
+    const nextVal = process.argv[keyIdx + 1]?.trim();
+    if (nextVal && !nextVal.startsWith("--")) {
+      return nextVal;
+    }
   }
   return null;
+}
+
+const ALLOWED_FAIL_ON = new Set(["score", "critical", "any"]);
+
+function validateTargetUrl(rawUrl) {
+  let parsed;
+  try {
+    parsed = new URL(String(rawUrl || "").trim());
+  } catch {
+    throw new Error(`Invalid URL "${rawUrl}". Include http:// or https://.`);
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new Error(`Unsupported URL protocol "${parsed.protocol}". Use http:// or https://.`);
+  }
+  return parsed.href;
+}
+
+function sanitizeRawHtml(rawHtml) {
+  if (typeof rawHtml !== "string") return undefined;
+  let cleaned = rawHtml
+    .replace(/<style\b[\s\S]*?<\/style>/gi, "")
+    .replace(/<svg\b[\s\S]*?<\/svg>/gi, "")
+    .replace(/<input\b[^>]*>/gi, (tag) => {
+      if (/\b(?:type=["']?(?:password|email|tel|number)["']?|\b(?:name|id|autocomplete)=["']?(?:[^"']*(?:pass|pwd|email|card|cc|cvv|cvc|ssn)[^"']*))["']?/i.test(tag)) {
+        return tag.replace(/\bvalue=(?:"[^"]*"|'[^']*'|[^\s>]+)/i, 'value="[REDACTED]"');
+      }
+      return tag.replace(/\bvalue=(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i, (m, q1, q2, u) => {
+        const val = q1 ?? q2 ?? u ?? "";
+        return val.replace(/\D/g, "").length >= 13 ? 'value="[REDACTED_CC]"' : m;
+      });
+    })
+    .replace(/(<textarea\b[^>]*>)([\s\S]*?)(<\/textarea>)/gi, (m, open, inner, close) => {
+      return inner.replace(/\D/g, "").length >= 13 ? `${open}[REDACTED_CC]${close}` : m;
+    })
+    .replace(/(src=["'])data:image\/[^"']*(["'])/gi, "$1$2");
+
+  if (cleaned.length > 150000) {
+    const footerMatch = cleaned.match(/<footer\b[\s\S]*?<\/footer>/i);
+    const reservedFooter = footerMatch ? footerMatch[0].slice(0, 12000) : "";
+    cleaned = cleaned.slice(0, 150000 - reservedFooter.length) + reservedFooter;
+  }
+  return cleaned;
+}
+
+async function callDarkLensScanApi({ apiKey, url, rawHtml, threshold = 70, failOn = "score" }) {
+  const validUrl = validateTargetUrl(url);
+  if (threshold === "" || threshold === null || typeof threshold === "boolean") {
+    throw new Error(`Invalid threshold "${threshold}". Must be a number between 0 and 100.`);
+  }
+  const numericThreshold = Number(threshold);
+  if (!Number.isFinite(numericThreshold) || numericThreshold < 0 || numericThreshold > 100) {
+    throw new Error(`Invalid threshold "${threshold}". Must be between 0 and 100.`);
+  }
+  if (!ALLOWED_FAIL_ON.has(failOn)) {
+    throw new Error(`Invalid failOn "${failOn}". Expected 'score', 'critical', or 'any'.`);
+  }
+
+  const body = {
+    url: validUrl,
+    threshold: Math.round(numericThreshold),
+    failOn,
+  };
+  if (rawHtml !== undefined) {
+    body.rawHtml = sanitizeRawHtml(rawHtml);
+  }
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 65000);
+  let res;
+  try {
+    res = await fetch("https://darklens.dev/api/ci/scan", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+        "User-Agent": "darklens-mcp/1.0.1",
+      },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+  } catch (err) {
+    if (err.name === "AbortError") {
+      throw new Error("DarkLens API request timed out after 65 seconds.");
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+
+  const rawText = await res.text();
+  let data;
+  try {
+    data = rawText ? JSON.parse(rawText) : {};
+  } catch {
+    throw new Error(`DarkLens API returned non-JSON response (${res.status} ${res.statusText}).`);
+  }
+
+  if (!res.ok && res.status !== 422) {
+    return {
+      isError: true,
+      content: [
+        {
+          type: "text",
+          text: `❌ DarkLens API Error (${res.status}): ${data.message || data.error || res.statusText}`,
+        },
+      ],
+    };
+  }
+
+  return {
+    content: [
+      {
+        type: "text",
+        text: JSON.stringify(data, null, 2),
+      },
+    ],
+  };
 }
 
 const server = new Server(
   {
     name: "darklens-mcp",
-    version: "1.0.0",
+    version: "1.0.1",
   },
   {
     capabilities: {
@@ -137,77 +262,17 @@ Generate an API key at https://darklens.dev/dashboard and subscribe to Agency or
 
   try {
     if (name === "darklens_audit_url") {
-      const { url, threshold = 70, failOn = "score" } = args;
-
-      const res = await fetch("https://darklens.dev/api/ci/scan", {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${apiKey}`,
-          "Content-Type": "application/json",
-          "User-Agent": "darklens-mcp/1.0.0",
-        },
-        body: JSON.stringify({ url, threshold, failOn }),
-      });
-
-      const data = await res.json();
-
-      if (!res.ok && res.status !== 422) {
-        return {
-          isError: true,
-          content: [
-            {
-              type: "text",
-              text: `❌ DarkLens API Error (${res.status}): ${data.message || data.error || res.statusText}`,
-            },
-          ],
-        };
-      }
-
-      return {
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify(data, null, 2),
-          },
-        ],
-      };
+      const { url, threshold = 70, failOn = "score" } = args || {};
+      return await callDarkLensScanApi({ apiKey, url, threshold, failOn });
     }
 
     if (name === "darklens_audit_html") {
-      const { rawHtml, url = "https://localhost:3000", threshold = 70, failOn = "score" } = args;
-
-      const res = await fetch("https://darklens.dev/api/ci/scan", {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${apiKey}`,
-          "Content-Type": "application/json",
-          "User-Agent": "darklens-mcp/1.0.0",
-        },
-        body: JSON.stringify({ url, rawHtml, threshold, failOn }),
-      });
-
-      const data = await res.json();
-
-      if (!res.ok && res.status !== 422) {
-        return {
-          isError: true,
-          content: [
-            {
-              type: "text",
-              text: `❌ DarkLens API Error (${res.status}): ${data.message || data.error || res.statusText}`,
-            },
-          ],
-        };
+      const { rawHtml, url, threshold = 70, failOn = "score" } = args || {};
+      if (!rawHtml || typeof rawHtml !== "string" || !rawHtml.trim()) {
+        throw new Error("rawHtml must be a non-empty string.");
       }
-
-      return {
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify(data, null, 2),
-          },
-        ],
-      };
+      const targetUrl = typeof url === "string" && url.trim() ? url.trim() : "https://localhost:3000";
+      return await callDarkLensScanApi({ apiKey, url: targetUrl, rawHtml, threshold, failOn });
     }
 
     if (name === "darklens_get_fair_pattern_guide") {
@@ -228,6 +293,16 @@ Generate an API key at https://darklens.dev/dashboard and subscribe to Agency or
           issue: "Fabricating artificial countdown timers or claiming 'Only 2 items left' when inventory is unlimited.",
           regulation: "FTC Act Section 5, UK CMA Guidelines, EU UCPD",
           fairPattern: "Only display timers if tied to an actual expiring sale or real reservation hold. Never reset timers on page refresh.",
+        },
+        hidden_fees: {
+          issue: "Drip pricing or revealing mandatory service, handling, or resort fees only at the final payment screen.",
+          regulation: "FTC Junk Fees Rule, California SB 478, EU Consumer Rights Directive",
+          fairPattern: "Display the all-in total price inclusive of mandatory fees upfront on the product card and initial cart summary.",
+        },
+        sneak_into_basket: {
+          issue: "Automatically adding paid add-ons, shipping protection, or extended warranties to the user's cart without opt-in.",
+          regulation: "EU Consumer Rights Directive Art. 22, UK DMCCA, FTC Section 5",
+          fairPattern: "Require an un-ticked, explicit opt-in action from the shopper before adding any secondary product or warranty to the cart.",
         },
         interface_interference: {
           issue: "Visual misdirection such as giant bright 'Accept Cookies' button with microscopic gray 'Reject' link.",
