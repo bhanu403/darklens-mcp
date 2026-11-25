@@ -11,7 +11,11 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
+import { createRequire } from "module";
 import fetch from "node-fetch";
+
+const require = createRequire(import.meta.url);
+const { version: PKG_VERSION } = require("../package.json");
 
 // Parse API key from env or command line arguments
 function getApiKey() {
@@ -106,7 +110,7 @@ async function callDarkLensScanApi({ apiKey, url, rawHtml, threshold = 70, failO
       headers: {
         "Authorization": `Bearer ${apiKey}`,
         "Content-Type": "application/json",
-        "User-Agent": "darklens-mcp/1.0.1",
+        "User-Agent": `darklens-mcp/${PKG_VERSION}`,
       },
       body: JSON.stringify(body),
       signal: controller.signal,
@@ -153,7 +157,7 @@ async function callDarkLensScanApi({ apiKey, url, rawHtml, threshold = 70, failO
 const server = new Server(
   {
     name: "darklens-mcp",
-    version: "1.0.1",
+    version: PKG_VERSION,
   },
   {
     capabilities: {

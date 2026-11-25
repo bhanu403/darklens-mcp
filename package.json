@@ -1,6 +1,6 @@
 {
   "name": "darklens-mcp",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "DarkLens Model Context Protocol (MCP) Server: Real-time dark pattern and compliance auditing for AI coding agents (Cursor, Windsurf, Claude Desktop, Lovable).",
   "type": "module",
   "main": "bin/index.js",
